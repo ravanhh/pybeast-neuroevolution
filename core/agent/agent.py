@@ -210,7 +210,7 @@ class Agent(WorldObject):
             else:
                 self.sensor_interact(other)
                 if self.is_touching(other):
-                    self.locaton += self._collision_normal * (self.radius - np.linalg.norm(self.location - self._collision_point))
+                    self.location += self._collision_normal * (self.radius - np.linalg.norm(self.location - self._collision_point))
                     self.on_collision(other)
                     other.on_collision(self)
                     self.world.add_collision(self._collision_point)
