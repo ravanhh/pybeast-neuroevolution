@@ -6,7 +6,6 @@ dependencies:
   - pyqt
   - pyopengl
   - numpy
-  - wxpython
   - matplotlib
   - pygobject
   - jupyter
