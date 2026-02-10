@@ -1,4 +1,5 @@
-import wx
+from PyQt5.QtWidgets import QMainWindow, QMenuBar, QMenu, QAction, QMessageBox, QStatusBar
+from PyQt5.QtCore import QPoint, QSize, QTimer, QThread, pyqtSignal, QMetaObject, Qt
 import importlib.util
 import sys
 import time
@@ -6,42 +7,48 @@ import threading
 
 from copy import deepcopy
 from pathlib import Path
-# from core.simulation import Simulation
 from gui.utils import AppIdentifiers as ID
 from gui.canvas import Canvas
 from core.world.world import World
 from core.log import LogWindow
 
-class Frame(wx.Frame):
+class Frame(QMainWindow):
+    # Signal for thread-safe canvas updates
+    update_canvas_signal = pyqtSignal()
+
     def __init__(
         self,
-        parent: wx.Frame,
-        title: str,
-        position: wx.Point = wx.Point(50, 50),
-        size: wx.Size = wx.Size(808, 681),
+        title: str = "PyBEAST++",
+        position: QPoint = QPoint(50, 50),
+        size: QSize = QSize(808, 681),
         simulation = None
     ):
-        super().__init__(parent, -1, title, position, size, wx.DEFAULT_FRAME_STYLE)
+        super().__init__()
+        self.setWindowTitle(title)
+        self.move(position)
+        self.resize(size)
+
         self.simulation = simulation
         self.simulation_names = []
         self.simulation_class = []
         self.current_simulation = None
         self.world_canvas: Canvas = None
         self.current_thread: threading.Thread = None
-        self.menu_bar = None
-        self.demo_bar = None
-        self.status_bar = self.CreateStatusBar(2)
-        self.log_window: LogWindow = None
+        self.log_window = None
         self.current_simulation_id: int = -1
         self.fps = 60
         self.started, self.paused = False, False
         self.initial_simulation_copy = None
-        
+
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Ready")
+
+        # Connect signal to slot
+        self.update_canvas_signal.connect(self._update_canvas_slot)
+
         self.create_menu_bar()
-        #self.create_log_window()
-        self.SetMenuBar(self.menu_bar)
-        self.status_bar.SetStatusText("Ready", 0)
-    
+
     def load_demos(self) -> None:
         demo_directory = Path("./demos/")
         demos = [ f for f in demo_directory.iterdir() if f.suffix == ".py" ]
@@ -49,7 +56,7 @@ class Frame(wx.Frame):
             spec = importlib.util.spec_from_file_location(demo.stem, demo)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-        
+
             if hasattr(module, "IS_DEMO") and module.IS_DEMO:
                 sys.modules[demo.stem] = module
                 name = getattr(module, "DEMO_NAME") # Demo Title
@@ -57,117 +64,117 @@ class Frame(wx.Frame):
                 sim_class = getattr(module, class_name)
                 self.simulation_names.append(name)
                 self.simulation_class.append(sim_class)
-    
+
     def create_menu_bar(self) -> None:
-        self.menu_bar = wx.MenuBar()
-        
-        file_menu = wx.Menu()
-        # file_menu.Append(ID.FILE_SAVE, "&Save")
-        # file_menu.Append(ID.FILE_LOAD, "&Load")
-        file_menu.Append(ID.ABOUT, "&About")
-        self.menu_bar.Append(file_menu, "&File")
-        
+        menu_bar = self.menuBar()
+
+        # File menu
+        file_menu = menu_bar.addMenu("&File")
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(self.on_about)
+        file_menu.addAction(about_action)
+
+        # Demo menu
         self.load_demos()
-        demo_menu = wx.Menu()
+        demo_menu = menu_bar.addMenu("&Demo")
         for i, demo in enumerate(self.simulation_names):
-            demo_menu.Append(getattr(ID, f"START_SIM_{i}"), f"&{demo}")
-        self.menu_bar.Append(demo_menu, "&Demo")
-        
-        action_menu = wx.Menu()
+            demo_action = QAction(f"&{demo}", self)
+            demo_action.setData(i)
+            demo_action.triggered.connect(lambda checked, idx=i: self.on_start_demo(idx))
+            demo_menu.addAction(demo_action)
+
+        # Action menu
+        action_menu = menu_bar.addMenu("&Action")
         if self.simulation is not None:
-            action_menu.Append(ID.START_MY_SIM, "&Start")
-        action_menu.Append(ID.SIMULATION_PAUSE, "&Toggle Pause")
-        action_menu.Append(ID.SIMULATION_FAST, "&Toggle High Speed")
-        action_menu.Append(ID.SIMULATION_RESET, "&Reset")
-        self.menu_bar.Append(action_menu, "&Action")
-        
-        # Event Bindings
-        self.Bind(wx.EVT_SIZE, self.on_resize)
-        self.Bind(wx.EVT_CLOSE, self.on_exit)
-        
-        # self.Bind(wx.EVT_MENU, self.on_save, id=ID.FILE_SAVE)
-        # self.Bind(wx.EVT_MENU, self.on_load, id=ID.FILE_LOAD)
-        self.Bind(wx.EVT_MENU, self.on_about, id=ID.ABOUT)
-        
-        for item in demo_menu.GetMenuItems():
-            self.Bind(wx.EVT_MENU, self.on_start_demo, item)
-        
-        if self.simulation is not None:
-            self.Bind(wx.EVT_MENU, self.on_start_simulation, id=ID.START_MY_SIM)
-        self.Bind(wx.EVT_MENU, self.on_pause, id=ID.SIMULATION_PAUSE)
-        self.Bind(wx.EVT_MENU, self.on_fast, id=ID.SIMULATION_FAST)
-        self.Bind(wx.EVT_MENU, self.on_reset, id=ID.SIMULATION_RESET)
-    
+            start_action = QAction("&Start", self)
+            start_action.triggered.connect(self.on_start_simulation)
+            action_menu.addAction(start_action)
+
+        pause_action = QAction("&Toggle Pause", self)
+        pause_action.triggered.connect(self.on_pause)
+        action_menu.addAction(pause_action)
+
+        fast_action = QAction("&Toggle High Speed", self)
+        fast_action.triggered.connect(self.on_fast)
+        action_menu.addAction(fast_action)
+
+        reset_action = QAction("&Reset", self)
+        reset_action.triggered.connect(self.on_reset)
+        action_menu.addAction(reset_action)
+
     def create_log_window(self) -> None:
-        position, size = self.GetPosition(), self.GetSize()
+        position = self.pos()
+        size = self.size()
         self.log_window = LogWindow(self)
-        self.log_window.SetPosition(wx.Point((position.x + size.GetWidth() + 10), position.y))
-        self.log_window.SetSize(400, size.GetHeight())
-        self.log_window.Show()
-        
-    def on_exit(self, event):
+        self.log_window.move(position.x() + size.width() + 10, position.y())
+        self.log_window.resize(400, size.height())
+        self.log_window.show()
+
+    def closeEvent(self, event):
         if self.current_thread is not None:
             self.kill_simulation()
         if self.log_window is not None:
-            self.log_window.Destroy()
-        self.Destroy()
-    
-    def on_resize(self, event):
+            self.log_window.close()
+        event.accept()
+
+    def resizeEvent(self, event):
         if self.world_canvas is not None:
             if not self.paused:
-                self.on_pause
-            self.world_canvas.on_size(event)
-        self.Refresh()
-    
-    def on_start_simulation(self, event):
+                self.on_pause()
+            # Canvas will handle its own resize through resizeGL
+        super().resizeEvent(event)
+
+    def on_start_simulation(self):
         self.start_simulation(self.simulation)
-    
-    def on_start_demo(self, event):
-        gui_name = self.menu_bar.FindItemById(event.GetId()).GetItemLabel()
-        simulation = self.simulation_class[self.simulation_names.index(gui_name[1:])]()
+
+    def on_start_demo(self, index):
+        simulation = self.simulation_class[index]()
         self.start_simulation(simulation)
-        
-    def on_pause(self, event) -> None:
+
+    def on_pause(self) -> None:
         if self.current_simulation is None:
             return
-        
+
         if not self.paused:
             self.pause_event.clear()
             self.paused = True
         else:
             self.pause_event.set()
             self.paused = False
-    
-    def on_fast(self, event) -> None:
+
+    def on_fast(self) -> None:
         if self.render_simulation.is_set():
             self.render_simulation.clear()
         else:
             self.render_simulation.set()
-    
-    def on_about(self, event):
-        wx.MessageBox("""Bioinspired Evolutionary Agent Simulation Toolkit\n
-                      PyBEAST++ Version: 1.0.0\n
-                      PyBEAST developed by University of Leeds
-                      PyBEAST++ created by James Borgars from PyBEAST
-                      """, "PyBEAST++", wx.ICON_INFORMATION)
-    
-    def on_reset(self, event) -> None:
+
+    def on_about(self):
+        QMessageBox.information(
+            self,
+            "PyBEAST++",
+            """Bioinspired Evolutionary Agent Simulation Toolkit
+
+PyBEAST++ Version: 1.0.0
+
+PyBEAST developed by University of Leeds
+PyBEAST++ created by James Borgars from PyBEAST"""
+        )
+
+    def on_reset(self) -> None:
         if self.initial_simulation_copy is not None:
             self.start_simulation(self.initial_simulation_copy)
-    
+
     def start_simulation(self, simulation) -> None:
         self.initial_simulation_copy = deepcopy(simulation)
-        
+
         if self.current_thread is not None:
             self.kill_simulation()
-        
+
         self.current_simulation = simulation
         if not self.current_simulation.loaded:
             self.current_simulation.initialise()
         self.create_world_canvas(self.current_simulation.world)
-        #self.current_simulation.log.addHandler(self.log_window.handler)
-        #self.log_window.log_ctrl.Clear()
-        
+
         self.pause_event = threading.Event()
         self.render_simulation = threading.Event()
         self.kill_thread = threading.Event()
@@ -177,24 +184,31 @@ class Frame(wx.Frame):
         )
         self.current_thread.daemon = True
         self.current_thread.start()
-        
+
     def kill_simulation(self):
         self.kill_thread.set()
         self.current_thread.join()
         time.sleep(0.25)
         self.destroy_world_canvas()
-        
+
+    def _update_canvas_slot(self):
+        """Slot to update canvas from the main thread"""
+        if self.world_canvas is not None:
+            self.world_canvas.display()
+
     def create_world_canvas(self, world: World):
-        self.world_canvas = Canvas(self, self.GetClientSize(), world)
-        event = wx.SizeEvent(self.GetClientSize())
-        self.world_canvas.on_size(event)
-    
+        self.world_canvas = Canvas(self, self.size(), world)
+        self.setCentralWidget(self.world_canvas)
+        self.world_canvas.show()
+
     def destroy_world_canvas(self):
-        self.world_canvas.Destroy()
-        self.world_canvas = None
+        if self.world_canvas is not None:
+            self.world_canvas.close()
+            self.world_canvas.deleteLater()
+            self.world_canvas = None
         self.current_simulation = None
         self.current_thread = None
-        
+
     def run_simulation(
         self,
         pause_event: threading.Event,
@@ -208,7 +222,7 @@ class Frame(wx.Frame):
             self.current_simulation.resume_simulation()
         pause_event.set()
         render_simulation.set()
-        
+
         complete = False
         while not complete:
             pause_event.wait()
@@ -217,7 +231,8 @@ class Frame(wx.Frame):
             start_time = time.time()
             complete = self.current_simulation.update()
             if render_simulation.is_set():
-                wx.CallAfter(self.world_canvas.display)
+                # Use signal for thread-safe GUI update
+                self.update_canvas_signal.emit()
                 sleep_for = max(0.01, (1.0 / self.fps) - (time.time() - start_time))
                 time.sleep(sleep_for)
             if complete:

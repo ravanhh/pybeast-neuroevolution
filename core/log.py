@@ -1,61 +1,62 @@
 import logging
 import sys
-import wx
+from PyQt5.QtWidgets import QMainWindow, QTextEdit, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt
 
-class LogWindow(wx.Frame):
+class LogWindow(QMainWindow):
     def __init__(self, main_window):
-        super().__init__(parent=None, title="Logger", size=(400, 300))
+        super().__init__(parent=None)
+        self.setWindowTitle("Logger")
+        self.resize(400, 300)
         self.main_window = main_window
         self.populate_window()
-        
+
         self.log = logging.getLogger()
         self.log.setLevel(logging.INFO)
-        
+
         self.handler = Handler(self)
         self.handler.setLevel(logging.INFO)
         self.handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-        
+
         self.console_handler = logging.StreamHandler(sys.stdout)
         self.console_handler.setLevel(logging.INFO)
         self.console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-        
-        self.Bind(wx.EVT_CLOSE, self.on_close)
-    
-    def populate_window(self) -> None:
-        self.scroll_win = wx.ScrolledWindow(self, style=wx.VSCROLL)
-        self.log_ctrl = wx.TextCtrl(self.scroll_win, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        self.scroll_win.SetSizer(wx.BoxSizer(wx.VERTICAL))
-        self.scroll_win.GetSizer().Add(self.log_ctrl, 1, wx.EXPAND | wx.ALL, border=5)
 
-        # Set the scrolled window as the main sizer of the frame
-        self.SetSizer(wx.BoxSizer(wx.VERTICAL))
-        self.GetSizer().Add(self.scroll_win, 1, wx.EXPAND)
-        
+    def populate_window(self) -> None:
+        # Create central widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Create read-only text edit for log display
+        self.log_ctrl = QTextEdit()
+        self.log_ctrl.setReadOnly(True)
+        layout.addWidget(self.log_ctrl)
+
     def clean(self):
-        self.scroll_win.Clear()
-        self.populate_window()
-    
+        self.log_ctrl.clear()
+
     def log_message(self, message: str):
         try:
-            self.log_ctrl.AppendText(message + '\n')
+            self.log_ctrl.append(message)
         except RuntimeError as e:
-            if str(e) == "wrapped C/C++ object of type TextCtrl has been deleted":
-                # Error comes up in jupyter notebooks because of stale GUI references and can be savely ignored
+            if "wrapped C/C++ object" in str(e) or "deleted" in str(e):
+                # Error comes up in jupyter notebooks because of stale GUI references and can be safely ignored
                 pass
             else:
                 raise
-    
-    def on_close(self, event):
-        self.main_window.log_window = None
-        self.Destroy()
 
-    
+    def closeEvent(self, event):
+        self.main_window.log_window = None
+        event.accept()
+
+
 class Handler(logging.StreamHandler):
     def __init__(self, log_window):
         super().__init__()
         self.log_window = log_window
-    
+
     def emit(self, message) -> None:
         message = self.format(message)
         self.log_window.log_message(message)
-    

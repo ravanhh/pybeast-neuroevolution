@@ -1,12 +1,10 @@
 import logging
 import sys
-import wx
 import time
 
 from abc import ABC
 from OpenGL.GL import glFinish
 from core.world.world import World
-from main import App
 from core.evolve.base import SimulationObject
 
 class Simulation(ABC):
@@ -44,8 +42,10 @@ class Simulation(ABC):
     
     def run_simulation(self, render = False, parallel = False) -> None:
         if render:
-            app = App(self)
-            app.MainLoop()
+            # Import here to avoid circular dependency
+            from main import App
+            app = App(simulation=self)
+            sys.exit(app.exec_())
         else:
             self.run_simulation_no_render(parallel)
     
@@ -62,16 +62,14 @@ class Simulation(ABC):
         pass
     
     def clean(self) -> None:
-        app = wx.GetApp()
+        # Clean up Qt application if running
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance()
         if app:
-            for window in wx.GetTopLevelWindows():
+            for window in app.topLevelWindows():
                 if window:
-                    window.Close(True)
-                    window.Destroy()
-            if app.IsMainLoopRunning():
-                app.ExitMainLoop()
-            del app
-            wx.GetApp().Destroy()
+                    window.close()
+            app.quit()
     
     def add(self, name: str, obj: SimulationObject) -> None:
         self.contents[name] = obj
