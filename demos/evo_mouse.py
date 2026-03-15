@@ -23,20 +23,20 @@ class Cheese(WorldObject):
 class EvoMouse(EvolvableFFNAgent):
     def __init__(self):
         super().__init__()
-
-        self.last_cheese = 0
         self.cheese_found = 0
         sensor_range = 400
 
-        self.add_sensor("angle", nearest_angle_sensor(Cheese, sensor_range))
+        # Physical Configuration (Task 3a)
+        self.add_sensor("left", nearest_angle_sensor(Cheese, sensor_range, 45))
+        self.add_sensor("center", nearest_angle_sensor(Cheese, sensor_range, 0))
+        self.add_sensor("right", nearest_angle_sensor(Cheese, sensor_range, -45))
+        
         self._interaction_range = sensor_range
         self.radius = 10
-        self.add_brain(10)
-    
-    def control(self):
-        super().control()
-        for key in self.controls.keys():
-            self.controls[key] = self.controls[key] + 0.5
+        
+        # Neural Architecture (Task 3b): Hidden layer of 6 neurons
+        self.add_brain(6)
+
     
     def on_collision(self, obj):
         if isinstance(obj, Cheese):

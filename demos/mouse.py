@@ -23,13 +23,14 @@ class Mouse(Agent):
         super().__init__()
 
         self.cheese_found = 0
-        sensor_range = 250
-        
-        self.add_sensor("angle", nearest_angle_sensor(Cheese, sensor_range))
-        self._interaction_range = sensor_range
-        self._min_speed = 25.0
-        self._max_speed = 100.0
+        sensor_range = 400
 
+        # Maintain the 3-sensor setup for Task 3a consistency
+        self.add_sensor("left", nearest_angle_sensor(Cheese, sensor_range, 45))
+        self.add_sensor("center", nearest_angle_sensor(Cheese, sensor_range, 0))
+        self.add_sensor("right", nearest_angle_sensor(Cheese, sensor_range, -45))
+        
+        self._interaction_range = sensor_range
         self.radius = 10
     
     def reset(self):
